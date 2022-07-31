@@ -7,8 +7,6 @@
 #include <unistd.h>
 #include <ncurses.h>
 
-#define clear_screen() printf("\033[H\033[J")
-
 #define WIN_ROW 32
 #define WIN_COL 100
 
@@ -87,7 +85,12 @@ int main(void)
     scrollok(stdscr, TRUE);
 
     
-    // game loop    
+    // game loop
+    
+    // ncurses clean screen procedure
+    clear();
+    refresh();
+
     while (!gameover)
     {
         print_map(map);
