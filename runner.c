@@ -10,9 +10,9 @@
 #define WIN_ROW 32
 #define WIN_COL 100
 
-#define SKY_LENGTH (int) ((WIN_ROW / 2) - ((int) (WIN_ROW / 5)))
-#define GROUND_LENGTH 3
+#define SKY_LENGTH (int) ((WIN_ROW / 2) - ((int) (WIN_ROW / 9)))
 
+#define GROUND_LENGTH (int) (WIN_ROW / 6)
 #define GROUND_ROW (WIN_ROW - 1 - GROUND_LENGTH)
 
 #define JUMP_AIRTIME 8
@@ -256,11 +256,15 @@ char **initiate_map(void)
     }
 
     // fill in ground region
-    for (int i = WIN_ROW - GROUND_LENGTH; i < WIN_ROW - 1; i++)
+    for (int j = 0; j < WIN_COL; j++)
+    {
+        map[WIN_ROW - GROUND_LENGTH][j] = '#';
+    }
+    for (int i = WIN_ROW - GROUND_LENGTH + 1; i < WIN_ROW - 1; i++)
     {
         for (int j = 0; j < WIN_COL; j++)
         {
-            map[i][j] = (rand() % 100 < 50) ? '~' : '>';
+            map[i][j] = (rand() % 100 < 50) ? '.' : ',';
         }
     }
 
@@ -320,9 +324,10 @@ void update_map(char **map)
         }
     }
     // insert new ground piece
-    for (int i = WIN_ROW - GROUND_LENGTH; i < WIN_ROW - 1; i++)
+    map[WIN_ROW - GROUND_LENGTH][WIN_COL - 1] = '#';
+    for (int i = WIN_ROW - GROUND_LENGTH + 1; i < WIN_ROW - 1; i++)
     {
-        map[i][WIN_COL - 1] = (rand() % 100 < 50) ? '~' : '>';
+        map[i][WIN_COL - 1] = (rand() % 100 < 50) ? '.' : ',';
     }
     
 }
