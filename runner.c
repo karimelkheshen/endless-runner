@@ -157,22 +157,16 @@ int main(void)
             
             cursor_to(0, 0); // reset the cursor back to top left to draw new frame
         }
-        else
-        {
-            insert_message(map, "Game over :(");
-            print_map(map);
-        }
     }
 
     // free map from memory
     free_map(map);
 
-    // reset terminal config
-    nocbreak();
-    echo();
-    nodelay(stdscr, FALSE);
-    scrollok(stdscr, FALSE);
-    
+    // reset terminal config after using ncurses
+    // https://invisible-island.net/ncurses/man/curs_initscr.3x.html#h3-endwin
+    endwin();
+
+    fprintf(stdout, "Game over :(\n");
     return 0;
 }
 
