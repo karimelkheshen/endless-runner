@@ -8,7 +8,6 @@
 #include <ncurses.h>
 
 #define clear_screen() printf("\033[H\033[J")
-#define cursor_to(x, y) printf("\033[%d;%dH", (y), (x))
 
 #define WIN_ROW 32
 #define WIN_COL 100
@@ -155,7 +154,7 @@ int main(void)
                 obstacle_counter--;
             }
             
-            cursor_to(0, 0); // reset the cursor back to top left to draw new frame
+            move(0, 0); // reset the cursor back to top left to draw new frame
         }
     }
 
