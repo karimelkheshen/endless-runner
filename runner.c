@@ -205,7 +205,34 @@ int main(void)
     fprintf(stdout, "Game over :(\n");
     return 0;
 }
- 
+
+
+
+void initialise_game_settings(GAME *g)
+{
+    g->SKY_LENGTH = (int)((g->WIN_ROW / 2) - (g->WIN_ROW / 9));
+
+    g->GROUND_LENGTH = (int)(g->WIN_ROW / 6);
+    g->GROUND_ROW = g->WIN_ROW - 1 - g->GROUND_LENGTH;
+
+    g->JUMP_AIRTIME = 8;
+    g->JUMP_HEIGHT = 10;
+    g->JUMP_WIDTH = 2 * g->JUMP_HEIGHT + g->JUMP_AIRTIME;
+
+    g->player_row = g->GROUND_ROW;
+    g->player_col = (int)(g->WIN_COL / 5);
+    g->player_bottom_animation_counter = 0;
+
+    g->jump_state = 0;
+    g->jump_counter = 0;
+
+    g->obstacle_timer = random_int(50, 100);
+    g->obstacle_row = g->GROUND_ROW;
+    g->obstacle_col = g->WIN_COL + OBSTACLE_CENTER_TO_EDGE;
+
+    g->gameover = 0;
+}
+
 
 /*
     Returns random integer within provided interval.
@@ -247,31 +274,6 @@ int key_pressed(void)
     }
 }
 
-
-void initialise_game_settings(GAME *g)
-{
-    g->SKY_LENGTH = (int)((g->WIN_ROW / 2) - (g->WIN_ROW / 9));
-
-    g->GROUND_LENGTH = (int)(g->WIN_ROW / 6);
-    g->GROUND_ROW = g->WIN_ROW - 1 - g->GROUND_LENGTH;
-    
-    g->JUMP_AIRTIME = 8;
-    g->JUMP_HEIGHT = 9;
-    g->JUMP_WIDTH = 2 * g->JUMP_HEIGHT + g->JUMP_AIRTIME;
-    
-    g->player_row = g->GROUND_ROW;
-    g->player_col = (int) (g->WIN_COL / 5);
-    g->player_bottom_animation_counter = 0;
-    
-    g->jump_state = 0;
-    g->jump_counter = 0;
-    
-    g->obstacle_timer = random_int(50, 100);
-    g->obstacle_row = g->GROUND_ROW;
-    g->obstacle_col = g->WIN_COL + OBSTACLE_CENTER_TO_EDGE;
-    
-    g->gameover = 0;
-}
 
 
 /*
