@@ -61,18 +61,21 @@ int key_pressed(void);
 void initialise_game_settings(GAME *);
 
 char **initiate_map(GAME *);
-void print_map(char **, GAME *g);
-void erase_map_middle(char **, GAME *g);
-void update_map(char **, GAME *g);
-void free_map(char **, GAME *g);
+void print_map(char **, GAME *);
+void erase_map_middle(char **, GAME *);
+void update_map(char **, GAME *);
+void free_map(char **, GAME *);
 
-int insert_player(char **, GAME *g);
+int insert_player(char **, GAME *);
 int is_obstacle_edge_char(char **, int, int);
 
-void insert_obstacle(char**, GAME *g);
+void update_jump_state(GAME *g);
+
+void insert_obstacle(char**, GAME *);
+void update_obstacle_state(GAME *);
 void insert_obstacle_layer(char *, int, int, int, int, char *);
 
-void insert_message(char **, char *, GAME *g);
+void insert_message(char **, char *, GAME *);
 
 
 
@@ -81,8 +84,7 @@ int main(void)
     srand(time(NULL));
 
 
-    // get info about terminal
-    // check if window dimensions compatible
+    // get and check current terminal window dimensions
     struct winsize w;
     ioctl(0, TIOCGWINSZ, &w);
     if (w.ws_row < MIN_WIN_ROW || w.ws_col < MIN_WIN_COL)
@@ -136,23 +138,7 @@ int main(void)
         // during jump state, update jump animation parameters
         if (g->jump_state)
         {
-            if (g->jump_counter < g->JUMP_HEIGHT)
-            {
-                g->player_row--;
-            }
-            else if (g->jump_counter > g->JUMP_HEIGHT + g->JUMP_AIRTIME)
-            {
-                g->player_row++;
-            }
-
-            g->jump_counter++;
-
-            if (g->jump_counter == g->JUMP_WIDTH)
-            {
-                g->jump_state = 0;
-                g->jump_counter = 0;
-                g->player_row = g->GROUND_ROW;
-            }
+            update_jump_state(g);
         }
 
 
@@ -166,16 +152,7 @@ int main(void)
         if (g->obstacle_timer == 0)
         {
             insert_obstacle(map, g);
-            
-            if (g->obstacle_col + OBSTACLE_CENTER_TO_EDGE > 0)
-            {
-                g->obstacle_col--;
-            }
-            else // obstacle exits: reset its parameters
-            {
-                g->obstacle_timer = random_int(200, 300);
-                g->obstacle_col = g->WIN_COL + OBSTACLE_CENTER_TO_EDGE;
-            }
+            update_obstacle_state(g);
         }
 
         // 
@@ -194,12 +171,11 @@ int main(void)
         }
     }
 
-    // free map and game struct from memory
+    // free resources
     free_map(map, g);
     free(g);
 
-    // reset terminal config after using ncurses
-    // https://invisible-island.net/ncurses/man/curs_initscr.3x.html#h3-endwin
+    // reset terminal config
     endwin();
 
     fprintf(stdout, "Game over :(\n");
@@ -481,6 +457,24 @@ void insert_obstacle(char **map, GAME *g)
 
 
 /*
+    If obstacle still in frame, update it's current position.
+    Otherwise reset obstacle_timer.
+*/
+void update_obstacle_state(GAME *g)
+{
+    if (g->obstacle_col + OBSTACLE_CENTER_TO_EDGE > 0)
+    {
+        g->obstacle_col--;
+    }
+    else // obstacle exits: reset its parameters
+    {
+        g->obstacle_timer = random_int(200, 300);
+        g->obstacle_col = g->WIN_COL + OBSTACLE_CENTER_TO_EDGE;
+    }
+}
+
+
+/*
     insert_obstacle() helper.
     adds the string (obstacle layer) to predefined section of the row.
 */
@@ -521,5 +515,30 @@ void insert_message(char **map, char *message, GAME *g)
     for (int i = 0; i < message_length; i++)
     {
         map[g->WIN_ROW - 1][i] = message[i];
+    }
+}
+
+/*
+    If jump state active, update jump_counter and player height.
+    Otherwise reset jump state parameters.
+*/
+void update_jump_state(GAME *g)
+{
+    if (g->jump_counter < g->JUMP_HEIGHT)
+    {
+        g->player_row--;
+    }
+    else if (g->jump_counter > g->JUMP_HEIGHT + g->JUMP_AIRTIME)
+    {
+        g->player_row++;
+    }
+
+    g->jump_counter++;
+
+    if (g->jump_counter == g->JUMP_WIDTH)
+    {
+        g->jump_state = 0;
+        g->jump_counter = 0;
+        g->player_row = g->GROUND_ROW;
     }
 }
