@@ -7,162 +7,196 @@
 #include <unistd.h>
 #include <ncurses.h>
 
-#define WIN_ROW 32
-#define WIN_COL 100
-
-#define SKY_LENGTH (int) ((WIN_ROW / 2) - ((int) (WIN_ROW / 9)))
-
-#define GROUND_LENGTH (int) (WIN_ROW / 6)
-#define GROUND_ROW (WIN_ROW - 1 - GROUND_LENGTH)
-
-#define JUMP_AIRTIME 8
-#define JUMP_HEIGHT 9
-#define JUMP_WIDTH (2 * JUMP_HEIGHT + JUMP_AIRTIME)
+#define MIN_WIN_ROW 30
+#define MIN_WIN_COL 60
 
 #define OBSTACLE_WIDTH 11
 #define OBSTACLE_CENTER_TO_EDGE 5
 
-#define FRAME_DELAY 25000
+#define FRAME_DELAY 18000
+
+#define PLAYER_BOTTOM_CHAR_SET "WWWWMMMM"
+
+/*
+    Only way to control game's gameplay and animation.
+*/
+typedef struct GAME_s
+{
+    // macros
+    int WIN_ROW;
+    int WIN_COL;
+
+    int SKY_LENGTH;
+    
+    int GROUND_LENGTH;
+    int GROUND_ROW;
+    
+    int JUMP_AIRTIME;
+    int JUMP_HEIGHT;
+    int JUMP_WIDTH;
+
+    // variables
+    int player_row;
+    int player_col;
+    int player_bottom_animation_counter;
+    
+    int jump_state;
+    int jump_counter;
+    
+    int obstacle_timer;
+    int obstacle_row;
+    int obstacle_col;
+    
+    int gameover;
+} GAME;
 
 
+/*
+    Function declarations.
+*/
 int random_int(int, int);
+void config_terminal(void);
 int key_pressed(void);
-int resize_window(void);
 
-char **initiate_map(void);
-void print_map(char**);
-void erase_map_middle(char **);
-void update_map(char **);
-void free_map(char **);
+void initialise_game_settings(GAME *);
 
-int insert_player(char **, int, int);
-int is_tree_edge_char(char **, int, int);
-void remove_player(char **, int, int);
+char **initiate_map(GAME *);
+void print_map(char **, GAME *g);
+void erase_map_middle(char **, GAME *g);
+void update_map(char **, GAME *g);
+void free_map(char **, GAME *g);
 
-void insert_obstacle(char**, int, int);
-void insert_obstacle_layer(char *, int, int, int, char *);
+int insert_player(char **, GAME *g);
+int is_obstacle_edge_char(char **, int, int);
 
-void insert_message(char **, char *);
+void insert_obstacle(char**, GAME *g);
+void insert_obstacle_layer(char *, int, int, int, int, char *);
+
+void insert_message(char **, char *, GAME *g);
+
 
 
 int main(void) 
 {
     srand(time(NULL));
 
-    
-    int player_row = GROUND_ROW;
-    int player_col = (int) (WIN_COL / 5);
 
-    int jump_state = 0;
-    int jump_counter = 0;
-
-    int obstacle_counter = random_int(50, 100); // number of frames between obstacles
-    int obstacle_row = GROUND_ROW;
-    int obstacle_col = WIN_COL + OBSTACLE_CENTER_TO_EDGE;
-
-    int gameover = 0;
-
-    
-    // resize the window
-    int resize_status = resize_window();
-    if (resize_status == 1)
+    // get info about terminal
+    // check if window dimensions compatible
+    struct winsize w;
+    ioctl(0, TIOCGWINSZ, &w);
+    if (w.ws_row < MIN_WIN_ROW || w.ws_col < MIN_WIN_COL)
     {
-        errx(1, "Failed to resize window to %dx%d", WIN_ROW, WIN_COL);
+        errx(1, "Terminal window size too small to render on.\nMust be larger than %dx%d", MIN_WIN_ROW, MIN_WIN_COL);
     }
 
+
+    // create and initialise game settings structure
+    GAME *g = malloc(sizeof(GAME));
+    if (!g)
+    {
+        errx(1, "Memory allocation error.\n");
+    }
+    g->WIN_ROW = w.ws_row;
+    g->WIN_COL = w.ws_col;
+    initialise_game_settings(g);
     
+
     // allocate game map and insert player
-    char **map = initiate_map();
-    insert_player(map, player_row, player_col);
+    char **map = initiate_map(g);
+    insert_player(map, g);
  
     
-    // setup for making keystroke detection non-blocking
-    // solution from: https://stackoverflow.com/questions/4025891/create-a-function-to-check-for-key-press-in-unix-using-ncurses
-    initscr();
-    cbreak();
-    noecho();
-    nodelay(stdscr, TRUE);
-    scrollok(stdscr, TRUE);
+    // keystroke detection must be non-blocking in game loop.
+    // because of ncurses call to initscr(), terminal will automatically clear the screen.
+    config_terminal();
+    
+
+    // ncurses clean screen procedure
+    erase();
+    refresh();
 
     
     // game loop
-    
-    // ncurses clean screen procedure
-    clear();
-    refresh();
-
-    while (!gameover)
+    while (!g->gameover)
     {
-        print_map(map);
+        print_map(map, g);
         
-        // turn on jump state if space key detected (non-blocking)
+
+        // turn on jump state if space key detected
+        // this must be non-blocking so it must be called after terminal_config()
         if (key_pressed())
         {
             if (getch() == 32) // space bar was pressed
             {
-                jump_state = 1;
+                g->jump_state = 1;
             }
         }
 
         // during jump state, update jump animation parameters
-        if (jump_state)
+        if (g->jump_state)
         {
-            if (jump_counter < JUMP_HEIGHT)
+            if (g->jump_counter < g->JUMP_HEIGHT)
             {
-                player_row--;
+                g->player_row--;
             }
-            else if (jump_counter > JUMP_HEIGHT + JUMP_AIRTIME)
+            else if (g->jump_counter > g->JUMP_HEIGHT + g->JUMP_AIRTIME)
             {
-                player_row++;
+                g->player_row++;
             }
 
-            jump_counter++;
+            g->jump_counter++;
 
-            if (jump_counter == JUMP_WIDTH)
+            if (g->jump_counter == g->JUMP_WIDTH)
             {
-                jump_state = 0;
-                jump_counter = 0;
-                player_row = GROUND_ROW;
+                g->jump_state = 0;
+                g->jump_counter = 0;
+                g->player_row = g->GROUND_ROW;
             }
         }
 
-        // update map for next frame and check for game over
-        erase_map_middle(map);
-        update_map(map);
 
-        // time for obstacle to come into frame
-        if (obstacle_counter == 0)
+        // update map for next frame
+        erase_map_middle(map, g);
+        update_map(map, g);
+        g->player_bottom_animation_counter++;
+
+        
+        // if obstacle_timer done, insert obstacle into frame and reset timer
+        if (g->obstacle_timer == 0)
         {
-            insert_obstacle(map, obstacle_row, obstacle_col);
+            insert_obstacle(map, g);
             
-            if (obstacle_col + OBSTACLE_CENTER_TO_EDGE > 0)
+            if (g->obstacle_col + OBSTACLE_CENTER_TO_EDGE > 0)
             {
-                obstacle_col--;
+                g->obstacle_col--;
             }
             else // obstacle exits: reset its parameters
             {
-                obstacle_counter = random_int(200, 300);
-                obstacle_col = WIN_COL + OBSTACLE_CENTER_TO_EDGE;
+                g->obstacle_timer = random_int(200, 300);
+                g->obstacle_col = g->WIN_COL + OBSTACLE_CENTER_TO_EDGE;
             }
         }
 
-        gameover = insert_player(map, player_row, player_col);
+        // 
+        g->gameover = insert_player(map, g);
 
-        if (!gameover) // prepare for next frame
+        if (!g->gameover) // prepare for next frame
         {
             usleep(FRAME_DELAY);
             
-            if (obstacle_counter > 0)
+            if (g->obstacle_timer > 0)
             {
-                obstacle_counter--;
+                g->obstacle_timer--;
             }
             
             move(0, 0); // reset the cursor back to top left to draw new frame
         }
     }
 
-    // free map from memory
-    free_map(map);
+    // free map and game struct from memory
+    free_map(map, g);
+    free(g);
 
     // reset terminal config after using ncurses
     // https://invisible-island.net/ncurses/man/curs_initscr.3x.html#h3-endwin
@@ -171,7 +205,7 @@ int main(void)
     fprintf(stdout, "Game over :(\n");
     return 0;
 }
-
+ 
 
 /*
     Returns random integer within provided interval.
@@ -181,10 +215,23 @@ int random_int(int lower, int upper)
     return rand() % (upper + 1 - lower) + lower;
 }
 
+/*
+    Use ncurses to configure terminal such that keystroke input is non-blocking.
+    Solution from: https://stackoverflow.com/questions/4025891/create-a-function-to-check-for-key-press-in-unix-using-ncurses
+*/
+void config_terminal(void)
+{
+    initscr();
+    cbreak();
+    noecho();
+    nodelay(stdscr, TRUE);
+    scrollok(stdscr, TRUE);
+}
+
 
 /*
     Detect keystroke without blocking.
-    Solution from: https://stackoverflow.com/questions/4025891/create-a-function-to-check-for-key-press-in-unix-using-ncurses
+    Only works if config_terminal() has already been called.
 */
 int key_pressed(void)
 {
@@ -201,68 +248,74 @@ int key_pressed(void)
 }
 
 
-/*
-    Resize terminal window to WIN_ROW x WIN_COL.
-*/
-int resize_window()
+void initialise_game_settings(GAME *g)
 {
-    // extract current window dimensions
-    struct winsize w;
-    ioctl(0, TIOCGWINSZ, &w);
-    // return resize status code
-    if (w.ws_row != WIN_ROW || w.ws_col != WIN_COL)
-    {
-        char escape_sequence_cmd[30];
-        sprintf(escape_sequence_cmd, "printf '\e[8;%d;%dt'", WIN_ROW, WIN_COL);
-        return system(escape_sequence_cmd);
-    }
-    // window dimension already compatible
-    return 0;
+    g->SKY_LENGTH = (int)((g->WIN_ROW / 2) - (g->WIN_ROW / 9));
+
+    g->GROUND_LENGTH = (int)(g->WIN_ROW / 6);
+    g->GROUND_ROW = g->WIN_ROW - 1 - g->GROUND_LENGTH;
+    
+    g->JUMP_AIRTIME = 8;
+    g->JUMP_HEIGHT = 9;
+    g->JUMP_WIDTH = 2 * g->JUMP_HEIGHT + g->JUMP_AIRTIME;
+    
+    g->player_row = g->GROUND_ROW;
+    g->player_col = (int) (g->WIN_COL / 5);
+    g->player_bottom_animation_counter = 0;
+    
+    g->jump_state = 0;
+    g->jump_counter = 0;
+    
+    g->obstacle_timer = random_int(50, 100);
+    g->obstacle_row = g->GROUND_ROW;
+    g->obstacle_col = g->WIN_COL + OBSTACLE_CENTER_TO_EDGE;
+    
+    g->gameover = 0;
 }
 
 
 /*
     Allocate and fill initial game map.
 */
-char **initiate_map(void)
+char **initiate_map(GAME *g)
 {
     // allocate rowsxcols 2d char array
-    char **map = malloc(WIN_ROW * sizeof(char *));
+    char **map = malloc(g->WIN_ROW * sizeof(char *));
     if (!map)
     {
         errx(1, "Memory allocation error.\n");
     }
-    for (int i = 0; i < WIN_ROW; i++)
+    for (int i = 0; i < g->WIN_ROW; i++)
     {
-        map[i] = malloc(WIN_COL);
+        map[i] = malloc(g->WIN_COL);
         if (!map[i])
         {
             errx(1, "Memory allocation error.\n");
         }
         // fill current row with spaces
-        for (int j = 0; j < WIN_COL; j++)
+        for (int j = 0; j < g->WIN_COL; j++)
         {
             map[i][j] = ' ';
         }
     }
 
     // fill in sky region
-    for (int i = 0; i < SKY_LENGTH; i++)
+    for (int i = 0; i < g->SKY_LENGTH; i++)
     {
-        for (int j = 0; j < WIN_COL; j++)
+        for (int j = 0; j < g->WIN_COL; j++)
         {
             map[i][j] = (rand() % 1000 < 10) ? '*' : ' ';
         }
     }
 
     // fill in ground region
-    for (int j = 0; j < WIN_COL; j++)
+    for (int j = 0; j < g->WIN_COL; j++)
     {
-        map[WIN_ROW - GROUND_LENGTH][j] = '#';
+        map[g->WIN_ROW - g->GROUND_LENGTH][j] = '#';
     }
-    for (int i = WIN_ROW - GROUND_LENGTH + 1; i < WIN_ROW - 1; i++)
+    for (int i = g->WIN_ROW - g->GROUND_LENGTH + 1; i < g->WIN_ROW - 1; i++)
     {
-        for (int j = 0; j < WIN_COL; j++)
+        for (int j = 0; j < g->WIN_COL; j++)
         {
             map[i][j] = (rand() % 100 < 50) ? '.' : ',';
         }
@@ -275,11 +328,11 @@ char **initiate_map(void)
 /*
     Print map to screen.
 */
-void print_map(char **map)
+void print_map(char **map, GAME *g)
 {
-    for (int i = 0; i < WIN_ROW; i++)
+    for (int i = 0; i < g->WIN_ROW; i++)
     {
-        for (int j = 0; j < WIN_COL; j++)
+        for (int j = 0; j < g->WIN_COL; j++)
         {
             fprintf(stdout, "%c", map[i][j]);
         }
@@ -291,11 +344,11 @@ void print_map(char **map)
     Covers the area between sky and ground with empty space.
     Erase player and obstacle to re-insert later.
 */
-void erase_map_middle(char **map)
+void erase_map_middle(char **map, GAME *g)
 {
-    for (int i = SKY_LENGTH ; i <= GROUND_ROW; i++)
+    for (int i = g->SKY_LENGTH ; i <= g->GROUND_ROW; i++)
     {
-        for (int j = 0; j < WIN_COL; j++)
+        for (int j = 0; j < g->WIN_COL; j++)
         {
             map[i][j] = ' ';
         }
@@ -306,28 +359,28 @@ void erase_map_middle(char **map)
 /*
     Update map with new frame.
 */
-void update_map(char **map)
+void update_map(char **map, GAME *g)
 {
-    for (int i = 0; i < WIN_ROW - 1; i++)
+    for (int i = 0; i < g->WIN_ROW - 1; i++)
     {
-        for (int j = 0; j < WIN_COL - 1; j++)
+        for (int j = 0; j < g->WIN_COL - 1; j++)
         {
             map[i][j] = map[i][j + 1];
         }
-        if (i < SKY_LENGTH) // insert new stars
+        if (i < g->SKY_LENGTH) // insert new stars
         {
-            map[i][WIN_COL - 1] = (rand() % 1000 < 10) ? '*' : ' ';
+            map[i][g->WIN_COL - 1] = (rand() % 1000 < 10) ? '*' : ' ';
         }
         else
         {
-            map[i][WIN_COL - 1] = ' ';
+            map[i][g->WIN_COL - 1] = ' ';
         }
     }
     // insert new ground piece
-    map[WIN_ROW - GROUND_LENGTH][WIN_COL - 1] = '#';
-    for (int i = WIN_ROW - GROUND_LENGTH + 1; i < WIN_ROW - 1; i++)
+    map[g->WIN_ROW - g->GROUND_LENGTH][g->WIN_COL - 1] = '#';
+    for (int i = g->WIN_ROW - g->GROUND_LENGTH + 1; i < g->WIN_ROW - 1; i++)
     {
-        map[i][WIN_COL - 1] = (rand() % 100 < 50) ? '.' : ',';
+        map[i][g->WIN_COL - 1] = (rand() % 100 < 50) ? '.' : ',';
     }
     
 }
@@ -336,56 +389,55 @@ void update_map(char **map)
 /*
     Insert player drawing into the map.
 */
-int insert_player(char **map, int player_row, int player_col)
+int insert_player(char **map, GAME *g)
 {
-    if (is_tree_edge_char(map, player_row, player_col) ||
-        is_tree_edge_char(map, player_row - 1, player_col) ||
-        is_tree_edge_char(map, player_row - 1, player_col - 1) ||
-        is_tree_edge_char(map, player_row - 1, player_col + 1) ||
-        is_tree_edge_char(map, player_row - 2, player_col))
+    // check if player's character insertions will overwrite an
+    // obstacle's edge character.
+    // If true return 1 to signal game over and end game loop.
+    if (is_obstacle_edge_char(map, g->player_row, g->player_col) ||
+        is_obstacle_edge_char(map, g->player_row - 1, g->player_col) ||
+        is_obstacle_edge_char(map, g->player_row - 1, g->player_col - 1) ||
+        is_obstacle_edge_char(map, g->player_row - 1, g->player_col + 1) ||
+        is_obstacle_edge_char(map, g->player_row - 2, g->player_col))
     {
         return 1;
     }
     else
     {
-        map[player_row][player_col] = 'M';
-        map[player_row - 1][player_col] = 'O';
-        map[player_row - 1][player_col - 1] = '/';
-        map[player_row - 1][player_col + 1] = '\\';
-        map[player_row - 2][player_col] = '@';
+        map[g->player_row][g->player_col] = PLAYER_BOTTOM_CHAR_SET[g->player_bottom_animation_counter % strlen(PLAYER_BOTTOM_CHAR_SET)];
+        map[g->player_row - 1][g->player_col] = 'O';
+        if (g->jump_state)
+        {
+            map[g->player_row - 2][g->player_col - 1] = '\\';
+            map[g->player_row - 2][g->player_col + 1] = '/';
+        }
+        else
+        {
+            map[g->player_row - 1][g->player_col - 1] = '/';
+            map[g->player_row - 1][g->player_col + 1] = '\\';
+        }
+        map[g->player_row - 2][g->player_col] = '@';
         return 0;
     }
 }
 
 
 /*
+    insert_player() helper.
     Returns true if argument is part of tree edge characters '#o'
 */
-int is_tree_edge_char(char **map, int r, int c)
+int is_obstacle_edge_char(char **map, int r, int c)
 {
     return ((map[r][c] == '#') || (map[r][c] == 'o'));
 }
 
 
 /*
-    Replaces player with whitespace in map.
-*/
-void remove_player(char **map, int player_row, int player_col)
-{
-    map[player_row][player_col] = ' ';
-    map[player_row - 1][player_col] = ' ';
-    map[player_row - 1][player_col - 1] = ' ';
-    map[player_row - 1][player_col + 1] = ' ';
-    map[player_row - 2][player_col] = ' ';
-}
-
-
-/*
     Free map from memory.
 */
-void free_map(char **map)
+void free_map(char **map, GAME *g)
 {
-    for (int i = 0; i < WIN_ROW; i++)
+    for (int i = 0; i < g->WIN_ROW; i++)
     {
         free(map[i]);
     }
@@ -396,33 +448,33 @@ void free_map(char **map)
 /*
     Add obstacle render to game map.
 */
-void insert_obstacle(char **map, int obstacle_row, int obstacle_col)
+void insert_obstacle(char **map, GAME *g)
 {
     int to_render = 0;
     int insertion_type = 0;
 
     // obstacle entering frame account for left edge
     // to_render captures number of left most chars already visible
-    if (obstacle_col >= WIN_COL)
+    if (g->obstacle_col >= g->WIN_COL)
     {
-        to_render = WIN_COL - (obstacle_col - OBSTACLE_CENTER_TO_EDGE);
+        to_render = g->WIN_COL - (g->obstacle_col - OBSTACLE_CENTER_TO_EDGE);
         insertion_type = 1;
     }
 
     // obstacle exitting frame
     // to_render captures number of right most chars still visible
-    if (obstacle_col - OBSTACLE_CENTER_TO_EDGE < 0)
+    if (g->obstacle_col - OBSTACLE_CENTER_TO_EDGE < 0)
     {
-        to_render = obstacle_col + OBSTACLE_CENTER_TO_EDGE;
+        to_render = g->obstacle_col + OBSTACLE_CENTER_TO_EDGE;
         insertion_type = 2;
     }
 
-    insert_obstacle_layer(map[GROUND_ROW - 0], insertion_type, to_render, obstacle_col, "    |||    ");
-    insert_obstacle_layer(map[GROUND_ROW - 1], insertion_type, to_render, obstacle_col, "    |||    ");
-    insert_obstacle_layer(map[GROUND_ROW - 2], insertion_type, to_render, obstacle_col, " ###\\|/#o# ");
-    insert_obstacle_layer(map[GROUND_ROW - 3], insertion_type, to_render, obstacle_col, "#o#\\#|#/###");
-    insert_obstacle_layer(map[GROUND_ROW - 4], insertion_type, to_render, obstacle_col, "#o#\\#|#/###");
-    insert_obstacle_layer(map[GROUND_ROW - 5], insertion_type, to_render, obstacle_col, "   #o###   ");
+    insert_obstacle_layer(map[g->GROUND_ROW - 0], g->WIN_COL, insertion_type, to_render, g->obstacle_col, "    |||    ");
+    insert_obstacle_layer(map[g->GROUND_ROW - 1], g->WIN_COL, insertion_type, to_render, g->obstacle_col, "    |||    ");
+    insert_obstacle_layer(map[g->GROUND_ROW - 2], g->WIN_COL, insertion_type, to_render, g->obstacle_col, " ###\\|/#o# ");
+    insert_obstacle_layer(map[g->GROUND_ROW - 3], g->WIN_COL, insertion_type, to_render, g->obstacle_col, "#o#\\#|#/###");
+    insert_obstacle_layer(map[g->GROUND_ROW - 4], g->WIN_COL, insertion_type, to_render, g->obstacle_col, "#o#\\#|#/###");
+    insert_obstacle_layer(map[g->GROUND_ROW - 5], g->WIN_COL, insertion_type, to_render, g->obstacle_col, "   #o###   ");
 }
 
 
@@ -430,7 +482,7 @@ void insert_obstacle(char **map, int obstacle_row, int obstacle_col)
     insert_obstacle() helper.
     adds the string (obstacle layer) to predefined section of the row.
 */
-void insert_obstacle_layer(char *row, int insertion_type, int to_render, int obstacle_col, char *layer)
+void insert_obstacle_layer(char *row, int row_length, int insertion_type, int to_render, int obstacle_col, char *layer)
 {
     int layer_length = strlen(layer);
 
@@ -445,7 +497,7 @@ void insert_obstacle_layer(char *row, int insertion_type, int to_render, int obs
     {
         for (int i = 0; i < to_render; i++)
         {
-            row[WIN_COL - to_render + i] = layer[i];
+            row[row_length - to_render + i] = layer[i];
         }
     }
     else
@@ -461,11 +513,11 @@ void insert_obstacle_layer(char *row, int insertion_type, int to_render, int obs
 /*
     Insert string at the bottom of the map.
 */
-void insert_message(char **map, char *message)
+void insert_message(char **map, char *message, GAME *g)
 {
     int message_length = strlen(message);
     for (int i = 0; i < message_length; i++)
     {
-        map[WIN_ROW-1][i] = message[i];
+        map[g->WIN_ROW - 1][i] = message[i];
     }
 }
