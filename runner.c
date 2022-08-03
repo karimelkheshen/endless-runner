@@ -10,6 +10,10 @@
 #define MIN_WIN_ROW 30
 #define MIN_WIN_COL 60
 
+#define JUMP_AIRTIME 8
+#define JUMP_HEIGHT 10
+#define JUMP_WIDTH 2 * JUMP_HEIGHT + JUMP_AIRTIME
+
 #define OBSTACLE_WIDTH 11
 #define OBSTACLE_CENTER_TO_EDGE 5
 
@@ -22,20 +26,14 @@
 */
 typedef struct GAME_s
 {
-    // macros
     int WIN_ROW;
     int WIN_COL;
 
-    int SKY_LENGTH;
-    
-    int GROUND_LENGTH;
-    int GROUND_ROW;
-    
-    int JUMP_AIRTIME;
-    int JUMP_HEIGHT;
-    int JUMP_WIDTH;
+    int sky_length;
 
-    // variables
+    int ground_length;
+    int ground_row;
+
     int player_row;
     int player_col;
     int player_bottom_animation_counter;
@@ -186,16 +184,12 @@ int main(void)
 
 void initialise_game_settings(GAME *g)
 {
-    g->SKY_LENGTH = (int)((g->WIN_ROW / 2) - (g->WIN_ROW / 9));
-
-    g->GROUND_LENGTH = (int)(g->WIN_ROW / 6);
-    g->GROUND_ROW = g->WIN_ROW - 1 - g->GROUND_LENGTH;
-
-    g->JUMP_AIRTIME = 8;
-    g->JUMP_HEIGHT = 10;
-    g->JUMP_WIDTH = 2 * g->JUMP_HEIGHT + g->JUMP_AIRTIME;
-
-    g->player_row = g->GROUND_ROW;
+    g->sky_length = (int) ((g->WIN_ROW / 2) - (g->WIN_ROW / 9));
+    
+    g->ground_length = (int) (g->WIN_ROW / 6);
+    g->ground_row = g->WIN_ROW - 1 - g->ground_length;
+    
+    g->player_row = g->ground_row;
     g->player_col = (int)(g->WIN_COL / 5);
     g->player_bottom_animation_counter = 0;
 
@@ -203,7 +197,7 @@ void initialise_game_settings(GAME *g)
     g->jump_counter = 0;
 
     g->obstacle_timer = random_int(50, 100);
-    g->obstacle_row = g->GROUND_ROW;
+    g->obstacle_row = g->ground_row;
     g->obstacle_col = g->WIN_COL + OBSTACLE_CENTER_TO_EDGE;
 
     g->gameover = 0;
@@ -278,7 +272,7 @@ char **initiate_map(GAME *g)
     }
 
     // fill in sky region
-    for (int i = 0; i < g->SKY_LENGTH; i++)
+    for (int i = 0; i < g->sky_length; i++)
     {
         for (int j = 0; j < g->WIN_COL; j++)
         {
@@ -289,9 +283,9 @@ char **initiate_map(GAME *g)
     // fill in ground region
     for (int j = 0; j < g->WIN_COL; j++)
     {
-        map[g->WIN_ROW - g->GROUND_LENGTH][j] = '#';
+        map[g->WIN_ROW - g->ground_length][j] = '#';
     }
-    for (int i = g->WIN_ROW - g->GROUND_LENGTH + 1; i < g->WIN_ROW - 1; i++)
+    for (int i = g->WIN_ROW - g->ground_length + 1; i < g->WIN_ROW - 1; i++)
     {
         for (int j = 0; j < g->WIN_COL; j++)
         {
@@ -324,7 +318,7 @@ void print_map(char **map, GAME *g)
 */
 void erase_map_middle(char **map, GAME *g)
 {
-    for (int i = g->SKY_LENGTH ; i <= g->GROUND_ROW; i++)
+    for (int i = g->sky_length ; i <= g->ground_row; i++)
     {
         for (int j = 0; j < g->WIN_COL; j++)
         {
@@ -345,7 +339,7 @@ void update_map(char **map, GAME *g)
         {
             map[i][j] = map[i][j + 1];
         }
-        if (i < g->SKY_LENGTH) // insert new stars
+        if (i < g->sky_length) // insert new stars
         {
             map[i][g->WIN_COL - 1] = (rand() % 1000 < 10) ? '*' : ' ';
         }
@@ -355,8 +349,8 @@ void update_map(char **map, GAME *g)
         }
     }
     // insert new ground piece
-    map[g->WIN_ROW - g->GROUND_LENGTH][g->WIN_COL - 1] = '#';
-    for (int i = g->WIN_ROW - g->GROUND_LENGTH + 1; i < g->WIN_ROW - 1; i++)
+    map[g->WIN_ROW - g->ground_length][g->WIN_COL - 1] = '#';
+    for (int i = g->WIN_ROW - g->ground_length + 1; i < g->WIN_ROW - 1; i++)
     {
         map[i][g->WIN_COL - 1] = (rand() % 100 < 50) ? '.' : ',';
     }
@@ -447,12 +441,12 @@ void insert_obstacle(char **map, GAME *g)
         insertion_type = 2;
     }
 
-    insert_obstacle_layer(map[g->GROUND_ROW - 0], g->WIN_COL, insertion_type, to_render, g->obstacle_col, "    |||    ");
-    insert_obstacle_layer(map[g->GROUND_ROW - 1], g->WIN_COL, insertion_type, to_render, g->obstacle_col, "    |||    ");
-    insert_obstacle_layer(map[g->GROUND_ROW - 2], g->WIN_COL, insertion_type, to_render, g->obstacle_col, " ###\\|/#o# ");
-    insert_obstacle_layer(map[g->GROUND_ROW - 3], g->WIN_COL, insertion_type, to_render, g->obstacle_col, "#o#\\#|#/###");
-    insert_obstacle_layer(map[g->GROUND_ROW - 4], g->WIN_COL, insertion_type, to_render, g->obstacle_col, "#o#\\#|#/###");
-    insert_obstacle_layer(map[g->GROUND_ROW - 5], g->WIN_COL, insertion_type, to_render, g->obstacle_col, "   #o###   ");
+    insert_obstacle_layer(map[g->ground_row - 0], g->WIN_COL, insertion_type, to_render, g->obstacle_col, "    |||    ");
+    insert_obstacle_layer(map[g->ground_row - 1], g->WIN_COL, insertion_type, to_render, g->obstacle_col, "    |||    ");
+    insert_obstacle_layer(map[g->ground_row - 2], g->WIN_COL, insertion_type, to_render, g->obstacle_col, " ###\\|/#o# ");
+    insert_obstacle_layer(map[g->ground_row - 3], g->WIN_COL, insertion_type, to_render, g->obstacle_col, "#o#\\#|#/###");
+    insert_obstacle_layer(map[g->ground_row - 4], g->WIN_COL, insertion_type, to_render, g->obstacle_col, "#o#\\#|#/###");
+    insert_obstacle_layer(map[g->ground_row - 5], g->WIN_COL, insertion_type, to_render, g->obstacle_col, "   #o###   ");
 }
 
 
@@ -524,21 +518,21 @@ void insert_message(char **map, char *message, GAME *g)
 */
 void update_jump_state(GAME *g)
 {
-    if (g->jump_counter < g->JUMP_HEIGHT)
+    if (g->jump_counter < JUMP_HEIGHT)
     {
         g->player_row--;
     }
-    else if (g->jump_counter > g->JUMP_HEIGHT + g->JUMP_AIRTIME)
+    else if (g->jump_counter > JUMP_HEIGHT + JUMP_AIRTIME)
     {
         g->player_row++;
     }
 
     g->jump_counter++;
 
-    if (g->jump_counter == g->JUMP_WIDTH)
+    if (g->jump_counter == JUMP_WIDTH)
     {
         g->jump_state = 0;
         g->jump_counter = 0;
-        g->player_row = g->GROUND_ROW;
+        g->player_row = g->ground_row;
     }
 }
