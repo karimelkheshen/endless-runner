@@ -139,12 +139,8 @@ int main(void)
             update_jump_state(g);
         }
 
-
         // update map for next frame
-        erase_map_middle(map, g);
         update_map(map, g);
-        g->player_bottom_animation_counter++;
-
         
         // if obstacle_timer done, insert obstacle into frame and reset timer
         if (g->obstacle_timer == 0)
@@ -312,49 +308,39 @@ void print_map(char **map, GAME *g)
 }
 
 
-/*
-    Covers the area between sky and ground with empty space.
-    Erase player and obstacle to re-insert later.
-*/
-void erase_map_middle(char **map, GAME *g)
-{
-    for (int i = g->sky_length ; i <= g->ground_row; i++)
-    {
-        for (int j = 0; j < g->WIN_COL; j++)
-        {
-            map[i][j] = ' ';
-        }
-    }
-}
-
 
 /*
     Update map with new frame.
 */
 void update_map(char **map, GAME *g)
 {
+    // update entire map
     for (int i = 0; i < g->WIN_ROW - 1; i++)
     {
         for (int j = 0; j < g->WIN_COL - 1; j++)
         {
             map[i][j] = map[i][j + 1];
         }
-        if (i < g->sky_length) // insert new stars
+    }
+    // erase map middle (player + obstacle)
+    for (int i  = g->sky_length; i <= g->ground_row; i++)
+    {
+        for (int j = 0; j < g->WIN_COL; j++)
         {
-            map[i][g->WIN_COL - 1] = (rand() % 1000 < 10) ? '*' : ' ';
-        }
-        else
-        {
-            map[i][g->WIN_COL - 1] = ' ';
+            map[i][j] = ' ';
         }
     }
-    // insert new ground piece
-    map[g->WIN_ROW - g->ground_length][g->WIN_COL - 1] = '#';
-    for (int i = g->WIN_ROW - g->ground_length + 1; i < g->WIN_ROW - 1; i++)
+    // update sky
+    for (int i = 0; i < g->sky_length; i++)
+    {
+        map[i][g->WIN_COL - 1] = (rand() % 1000 < 10) ? '*' : ' ';
+    }
+    // update ground
+    map[g->ground_row + 1][g->WIN_COL - 1] = '#';
+    for (int i = g->ground_row + 2; i < g->WIN_ROW - 1; i++)
     {
         map[i][g->WIN_COL - 1] = (rand() % 100 < 50) ? '.' : ',';
     }
-    
 }
 
 
@@ -363,6 +349,7 @@ void update_map(char **map, GAME *g)
 */
 int insert_player(char **map, GAME *g)
 {
+    g->player_bottom_animation_counter++;
     // check if player's character insertions will overwrite an
     // obstacle's edge character.
     // If true return 1 to signal game over and end game loop.
