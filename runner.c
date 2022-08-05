@@ -17,8 +17,6 @@
 #define OBSTACLE_WIDTH 11
 #define OBSTACLE_CENTER_TO_EDGE 5
 
-#define FRAME_DELAY 18000
-
 #define PLAYER_BOTTOM_CHAR_SET "WWWWMMMM"
 
 /*
@@ -29,38 +27,41 @@ typedef struct GAME_s
     int WIN_ROW;
     int WIN_COL;
 
+    int frame_delay;
     int sky_length;
-
     int ground_length;
     int ground_row;
-
+    int difficulty;
+    int gameover;
+    
     int player_row;
     int player_col;
+    int player_score;
     int player_bottom_animation_counter;
     
     int jump_state;
     int jump_counter;
     
+    int max_obstacle_time;
+    int min_obstacle_time;
     int obstacle_timer;
     int obstacle_row;
     int obstacle_col;
-    
-    int gameover;
 } GAME;
 
 
 /*
     Function declarations.
 */
+void initialise_game_settings(GAME *);
+void adjust_game_difficulty(GAME *);
+
 int random_int(int, int);
 void config_terminal(void);
 int key_pressed(void);
 
-void initialise_game_settings(GAME *);
-
 char **initiate_map(GAME *);
 void print_map(char **, GAME *);
-void erase_map_middle(char **, GAME *);
 void update_map(char **, GAME *);
 void free_map(char **, GAME *);
 
@@ -69,25 +70,24 @@ int is_obstacle_edge_char(char **, int, int);
 
 void update_jump_state(GAME *g);
 
-void insert_obstacle(char**, GAME *);
 void update_obstacle_state(GAME *);
+void insert_obstacle(char **, GAME *);
 void insert_obstacle_layer(char *, int, int, int, int, char *);
 
 void insert_message(char **, char *, GAME *);
 
 
 
-int main(void) 
+int main (void) 
 {
     srand(time(NULL));
-
 
     // get and check current terminal window dimensions
     struct winsize w;
     ioctl(0, TIOCGWINSZ, &w);
     if (w.ws_row < MIN_WIN_ROW || w.ws_col < MIN_WIN_COL)
     {
-        errx(1, "Terminal window size too small to render on.\nMust be larger than %dx%d", MIN_WIN_ROW, MIN_WIN_COL);
+        errx(1, "Terminal window size too small to render on.\nMust be larger than %dx%d.", MIN_WIN_ROW, MIN_WIN_COL);
     }
 
 
@@ -121,7 +121,21 @@ int main(void)
     while (!g->gameover)
     {
         print_map(map, g);
+
+        // update player score
+        g->player_score += 2;
+        char score_message[30];
+        if (!sprintf(score_message, "Score: %d", g->player_score))
+        {
+            insert_message(map, "Score too large. You win.", g);
+            g->gameover = 1;
+        }
+        insert_message(map, score_message, g);
+
         
+        // adjust difficulty based on player score
+        adjust_game_difficulty(g);
+
 
         // turn on jump state if space key detected
         // this must be non-blocking so it must be called after terminal_config()
@@ -154,7 +168,7 @@ int main(void)
 
         if (!g->gameover) // prepare for next frame
         {
-            usleep(FRAME_DELAY);
+            usleep(g->frame_delay);
             
             if (g->obstacle_timer > 0)
             {
@@ -165,6 +179,8 @@ int main(void)
         }
     }
 
+    int final_score = g->player_score;
+
     // free resources
     free_map(map, g);
     free(g);
@@ -173,32 +189,63 @@ int main(void)
     endwin();
 
     fprintf(stdout, "Game over :(\n");
+    fprintf(stdout, "Final Score: %d\n", final_score);
+
     return 0;
 }
 
 
 
-void initialise_game_settings(GAME *g)
+void initialise_game_settings (GAME *g)
 {
+    g->frame_delay = 19000;
     g->sky_length = (int) ((g->WIN_ROW / 2) - (g->WIN_ROW / 9));
-    
     g->ground_length = (int) (g->WIN_ROW / 6);
     g->ground_row = g->WIN_ROW - 1 - g->ground_length;
-    
+    g->difficulty = 0;
+    g->gameover = 0;
+
     g->player_row = g->ground_row;
     g->player_col = (int)(g->WIN_COL / 5);
+    g->player_score = 0;
     g->player_bottom_animation_counter = 0;
 
     g->jump_state = 0;
     g->jump_counter = 0;
 
-    g->obstacle_timer = random_int(50, 100);
+    g->min_obstacle_time = 2 * JUMP_HEIGHT + JUMP_AIRTIME + 4;
+    g->max_obstacle_time = g->min_obstacle_time * 4; // 4 difficulty levels
+    g->obstacle_timer = random_int(g->min_obstacle_time, g->max_obstacle_time);
     g->obstacle_row = g->ground_row;
     g->obstacle_col = g->WIN_COL + OBSTACLE_CENTER_TO_EDGE;
-
-    g->gameover = 0;
 }
 
+
+/*
+    Based on the player's current score, increase the frequency of obstacle generation.
+    A random number for the obstacle's generation timer is generated specifying an interval.
+    The lower bound of this interval is decreased based on the player's score progression.
+*/
+void adjust_game_difficulty (GAME *g)
+{
+    if (
+        g->player_score == 250 ||
+        g->player_score == 500 ||
+        g->player_score == 1000 ||
+        g->player_score == 1500 ||
+        g->player_score == 3500 ||
+        g->player_score == 5000 ||
+        g->player_score == 7000
+    )
+    {
+        g->frame_delay -= 200;
+        g->difficulty += (g->min_obstacle_time / 2);
+    }
+    if (g->player_score > 7000 && g->player_score % 100 == 0)
+    {
+        g->frame_delay -= 25;
+    }
+}
 
 /*
     Returns random integer within provided interval.
@@ -409,31 +456,31 @@ void free_map(char **map, GAME *g)
 */
 void insert_obstacle(char **map, GAME *g)
 {
-    int to_render = 0;
+    int num_visible_chars = 0;
     int insertion_type = 0;
 
     // obstacle entering frame account for left edge
-    // to_render captures number of left most chars already visible
+    // num_visible_chars captures number of left most chars already visible
     if (g->obstacle_col >= g->WIN_COL)
     {
-        to_render = g->WIN_COL - (g->obstacle_col - OBSTACLE_CENTER_TO_EDGE);
+        num_visible_chars = g->WIN_COL - (g->obstacle_col - OBSTACLE_CENTER_TO_EDGE);
         insertion_type = 1;
     }
 
     // obstacle exitting frame
-    // to_render captures number of right most chars still visible
+    // num_visible_chars captures number of right most chars still visible
     if (g->obstacle_col - OBSTACLE_CENTER_TO_EDGE < 0)
     {
-        to_render = g->obstacle_col + OBSTACLE_CENTER_TO_EDGE;
+        num_visible_chars = g->obstacle_col + OBSTACLE_CENTER_TO_EDGE;
         insertion_type = 2;
     }
 
-    insert_obstacle_layer(map[g->ground_row - 0], g->WIN_COL, insertion_type, to_render, g->obstacle_col, "    |||    ");
-    insert_obstacle_layer(map[g->ground_row - 1], g->WIN_COL, insertion_type, to_render, g->obstacle_col, "    |||    ");
-    insert_obstacle_layer(map[g->ground_row - 2], g->WIN_COL, insertion_type, to_render, g->obstacle_col, " ###\\|/#o# ");
-    insert_obstacle_layer(map[g->ground_row - 3], g->WIN_COL, insertion_type, to_render, g->obstacle_col, "#o#\\#|#/###");
-    insert_obstacle_layer(map[g->ground_row - 4], g->WIN_COL, insertion_type, to_render, g->obstacle_col, "#o#\\#|#/###");
-    insert_obstacle_layer(map[g->ground_row - 5], g->WIN_COL, insertion_type, to_render, g->obstacle_col, "   #o###   ");
+    insert_obstacle_layer(map[g->ground_row - 0], g->WIN_COL, insertion_type, num_visible_chars, g->obstacle_col, "    |||    ");
+    insert_obstacle_layer(map[g->ground_row - 1], g->WIN_COL, insertion_type, num_visible_chars, g->obstacle_col, "    |||    ");
+    insert_obstacle_layer(map[g->ground_row - 2], g->WIN_COL, insertion_type, num_visible_chars, g->obstacle_col, " ###\\|/#o# ");
+    insert_obstacle_layer(map[g->ground_row - 3], g->WIN_COL, insertion_type, num_visible_chars, g->obstacle_col, "#o#\\#|#/###");
+    insert_obstacle_layer(map[g->ground_row - 4], g->WIN_COL, insertion_type, num_visible_chars, g->obstacle_col, "#o#\\#|#/###");
+    insert_obstacle_layer(map[g->ground_row - 5], g->WIN_COL, insertion_type, num_visible_chars, g->obstacle_col, "   #o###   ");
 }
 
 
@@ -449,7 +496,7 @@ void update_obstacle_state(GAME *g)
     }
     else // obstacle exits: reset its parameters
     {
-        g->obstacle_timer = random_int(200, 300);
+        g->obstacle_timer = random_int(g->min_obstacle_time, g->max_obstacle_time - g->difficulty);
         g->obstacle_col = g->WIN_COL + OBSTACLE_CENTER_TO_EDGE;
     }
 }
