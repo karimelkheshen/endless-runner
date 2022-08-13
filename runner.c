@@ -24,21 +24,15 @@
 #define GAME_LENGTH 4 // see declaration of obs_max_gen_gap
 #define GAME_MAX_DIFF_SCORE 4000 // see updating game difficulty in game loop
 
-void insert_obstacle(char **map, int WIN_COL, int obs_col, int ground_row);
-void insert_obstacle_layer(char *row, int row_length, int insertion_type, int to_render, int obs_col, char *layer);
-int insert_player(char **map, int player_row, int player_col, int player_jump_state);
-int is_obstacle_edge_char(char **map, int r, int c);
-
 
 int random_int_between(int upper, int lower)
 {
     return rand() % (upper + 1 - lower) + lower;
 }
 
-
 /*
- * Returns 1 is keystroke is detected.
- * Terminal must be already be configured for non-blocking for this to work.
+ * If keystroke detected return 1.
+ * For this to work, the terminal must already be configured for non-blocking.
  */
 int key_pressed(void)
 {
