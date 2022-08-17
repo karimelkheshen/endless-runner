@@ -1,17 +1,18 @@
 #include <stdlib.h>
-#include <sys/ioctl.h>
-#include <string.h>
 #include <time.h>
-#include <unistd.h>
-#include <ncurses.h>
+#include <string.h> /* Only for strlen() */
 
-#define clear_screen() printf("\033[H\033[J")
-#define cursor_to(x, y) printf("\033[%d;%dH", (y), (x))
+#include "util.h"
+
 
 #define MIN_WIN_ROW 30
 #define MIN_WIN_COL 70
 
-#define FRAME_DELAY 15000 // number of microseconds to sleep between processing each frame
+#ifdef _WIN32
+    #define FRAME_DELAY 10
+#else
+    #define FRAME_DELAY 14
+#endif
 
 #define JUMP_HEIGHT 10 // number of frames player needs to reach max jump height
 #define JUMP_AIRTIME 8 // number of frames player hovers for when JUMP_HEIGHT is reached
@@ -30,31 +31,17 @@ int random_int_between(int upper, int lower)
     return rand() % (upper + 1 - lower) + lower;
 }
 
-/*
- * If keystroke detected return 1.
- * For this to work, the terminal must already be configured for non-blocking.
- */
-int key_pressed(void)
-{
-    int ch = getch();
-    if (ch != ERR)
-    {
-        ungetch(ch);
-        return 1;
-    }
-    return 0;
-}
 
 
 int main (void)
 {
     /*
-    * Get and check terminal window dimensions.
-    * (!) Will cause issues on Windows.
-    */
-    struct winsize w;
-    ioctl(0, TIOCGWINSZ, &w);
-    if (w.ws_row < MIN_WIN_ROW || w.ws_col < MIN_WIN_COL)
+     * Get and check window dimensions.
+     */
+    int win_row, win_col;
+    get_terminal_window_dimensions(&win_row, &win_col);
+    
+    if (win_row < MIN_WIN_ROW || win_col < MIN_WIN_COL)
     {
         fprintf(stdout, "Terminal window size too small to render on.\n");
         fprintf(stdout, "Must be larger than %dx%d.\n", MIN_WIN_ROW, MIN_WIN_COL);
@@ -62,11 +49,24 @@ int main (void)
     }
 
 
+    /*
+    * Buffer output for smoother drawing.
+    */
+    int BUFFER_SIZE = win_row * win_col;
+    char new_buffer[BUFFER_SIZE];
+    for (int i = 0; i < BUFFER_SIZE; i++)
+    {
+        new_buffer[i] = ' ';
+    }
+    setvbuf(stdout, new_buffer, _IOFBF, BUFFER_SIZE);
+    
+
     srand(time(NULL));
 
+
     /*
-    * Character map of obstacle, used for drawing.
-    */
+     * Character map of obstacle, used for drawing.
+     */
     const char obstacle_char_map[OBSTACLE_LENGTH][OBSTACLE_WIDTH] =
     {
         {' ', ' ', ' ', ' ', '|', '|', '|', ' ', ' ', ' ', ' '},
@@ -81,34 +81,30 @@ int main (void)
     /*
      * Declare and initialise all game parameters.
      */
-    // window dimensions
-    const int win_row = w.ws_row;
-    const int win_col = w.ws_col;
-    
     // environment parameters
-    const int num_rows_for_sky = (int) ((win_row / 2) - (win_row / 9));
-    const int num_rows_for_ground = (int)(win_row / 6);
-    const int ground_row = win_row - num_rows_for_ground - 1;
+    int num_rows_for_sky = (int) ((win_row / 2) - (win_row / 9));
+    int num_rows_for_ground = (int) (win_row / 6);
+    int ground_row = win_row - num_rows_for_ground - 1;
     int difficulty = 0;
     int gameover = 0;
 
     // player parameters
     int player_row = ground_row;
-    const int player_col = (int) (win_col / 5);
+    int player_col = (int) (win_col / 5);
     int player_score = 0;
-    int player_jumped = 0;
+    int player_is_jumping = 0;
     int player_jump_timer = 0;
 
     // obstacle parameters
-    const int obs_min_gen_gap = JUMP_WIDTH;
+    int obs_min_gen_gap = JUMP_WIDTH;
     int obs_max_gen_gap = GAME_LENGTH * obs_min_gen_gap;
     int obs_timer = random_int_between(obs_min_gen_gap, obs_max_gen_gap);
     int obs_col = win_col + OBSTACLE_CENTER_TO_EDGE;
 
     
     /*
-    * Allocate and initiate game map, then insert player.
-    */
+     * Allocate and initiate game map, then insert player.
+     */
     // allocate 2d char array to fill current window dimensions.
     char **map = malloc(win_row * sizeof(char *));
     if (!map)
@@ -150,27 +146,28 @@ int main (void)
         }
     }
 
- 
-
-    /*
-    * Configure the terminal to allow waiting for a keystroke during game loop to be non-blocking.
-    * (!) Will cause issues on Windows because of ncurses.
-    */
-    initscr(); // Will cause terminal to automatically clear the screen
-    cbreak();
-    noecho();
-    nodelay(stdscr, TRUE);
-    scrollok(stdscr, TRUE);
-
     
     /*
-    * Game loop.
-    */
+     * If called from ncurses-compatible terminal, configure the terminal to make keystroke detection during game loop non-blocking.
+     * https://stackoverflow.com/questions/4025891/create-a-function-to-check-for-key-press-in-unix-using-ncurses
+     */
+    #ifndef _WIN32
+        initscr(); // Will cause terminal to automatically clear the screen
+        cbreak();
+        noecho();
+        nodelay(stdscr, TRUE);
+        scrollok(stdscr, TRUE);
+    #endif
+
+
+    /*
+     * Game loop.
+     */
     while (!gameover)
     {
         /*
-        * Print map to screen.
-        */
+         * Print map to screen.
+         */
         cursor_to(0, 0);
         for (int i = 0; i < win_row; i++)
         {
@@ -213,28 +210,19 @@ int main (void)
         }
 
 
-        /*
-         * If space key is pressed, turn on player jump state to trigger jump animation.
-         */
-        if (key_pressed())
+        if (space_key_pressed())
         {
-            if (getch() == 32) // space bar was pressed
-            {
-                player_jumped = 1;
-            }
+            player_is_jumping = 1;
         }
 
 
         /*
-        * Update and display player score.
-        */
+         * Update and display player score.
+         */
         player_score += 2;
 
         char score_message[win_col];
-        if (!sprintf(score_message, " SCORE: %d", player_score))
-        {
-            gameover = 1;
-        }
+        sprintf(score_message, " SCORE: %d", player_score);
         for (int i = 0; i < strlen(score_message); i++)
         {
             map[win_row - 1][i] = score_message[i];
@@ -242,9 +230,9 @@ int main (void)
 
 
         /*
-        * Update game difficulty based on player score.
-        * GAME_MAX_DIFF_SCORE is assumed to be a large enough score for game to reach max difficulty.
-        */
+         * Update game difficulty based on player score.
+         * GAME_MAX_DIFF_SCORE is assumed to be a large enough score for game to reach max difficulty.
+         */
         if (player_score < GAME_MAX_DIFF_SCORE)
         {
             difficulty = (player_score * ((obs_min_gen_gap * GAME_LENGTH) - obs_min_gen_gap + 1)) / GAME_MAX_DIFF_SCORE;
@@ -254,6 +242,7 @@ int main (void)
         /*
          * Draw obstacle while it enters and exits frame.
          */
+        // obstacle is currently in frame
         if (obs_timer == 0)
         {
             int num_visible_chars = 0; // number of columns obstacle still visible in
@@ -284,6 +273,7 @@ int main (void)
                 }
             }
 
+            // midway
             else
             {
                 for (int i = 0; i < OBSTACLE_LENGTH; i++)
@@ -295,18 +285,19 @@ int main (void)
                 }
             }
 
-            // If obstacle still in frame, update its position
+            // If obstacle hasn't exitted, update its position
             if (obs_col + OBSTACLE_CENTER_TO_EDGE > 0)
             {
                 obs_col--;
             }
-            // Else, reset its parameters
+            // Else, reset its parameters.
             else
             {
                 obs_timer = random_int_between(obs_min_gen_gap, obs_max_gen_gap - difficulty);
                 obs_col = win_col + OBSTACLE_CENTER_TO_EDGE;
             }
         }
+        // obstacle hasn't been generated yet, update timer
         else
         {
             obs_timer--;
@@ -314,9 +305,9 @@ int main (void)
 
 
         /*
-        * If player jumps, maintain player_row (y position) according to JUMP_HEIGHT and JUMP_AIRTIME.
-        */
-        if (player_jumped)
+         * If player jumps, maintain player_row (y position) according to JUMP_HEIGHT and JUMP_AIRTIME.
+         */
+        if (player_is_jumping)
         {
             // ascending
             if (player_jump_timer < JUMP_HEIGHT)
@@ -334,7 +325,7 @@ int main (void)
             // end of jump
             if (player_jump_timer == JUMP_WIDTH)
             {
-                player_jumped = 0;
+                player_is_jumping = 0;
                 player_jump_timer = 0;
                 player_row = ground_row;
             }
@@ -342,8 +333,8 @@ int main (void)
 
 
         /*
-        * Draw player.
-        */
+         * Draw player.
+         */
         // Overwriting obstacle chars while drawing player signals game over
         if (
             map[player_row][player_col] == '#' ||
@@ -360,7 +351,7 @@ int main (void)
         {
             map[player_row][player_col] = (rand() % 2 == 0) ? 'W' : 'M'; // legs
             map[player_row - 1][player_col] = 'O'; // body?
-            if (player_jumped) // raise arms when jumping
+            if (player_is_jumping) // raise arms when jumping
             {
                 map[player_row - 2][player_col - 1] = '\\';
                 map[player_row - 2][player_col + 1] = '/';
@@ -378,13 +369,15 @@ int main (void)
          */
         if (!gameover)
         {
-            usleep(FRAME_DELAY);
+            fflush(stdout);
+            sleep_for_millis(FRAME_DELAY);
         }
     }
 
+
     /*
-    * Free map from memory.
-    */
+     * Free map from memory.
+     */
     for (int i = 0; i < win_row; i++)
     {
         free(map[i]);
@@ -393,11 +386,27 @@ int main (void)
 
 
     /*
-    * Reset terminal after ncurses.
-    */
-    endwin();
+     * If Unix terminal, reset previous config after ncurses.
+     */
+    #ifndef _WIN32
+        endwin();
+    #endif
 
-    clear_screen();
+    
+    /*
+     * Clear screen.
+     */
+    cursor_to(0, 0);
+    for (int i = 0; i < win_row; i++)
+    {
+        for (int j = 0; j < win_col; j++)
+        {
+            fprintf(stdout, " ");
+        }
+    }
+    cursor_to(0, 0);
+    
     fprintf(stdout, "Game over :(\nFinal Score: %d\n", player_score);
+
     return 0;
 }
