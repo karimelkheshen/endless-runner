@@ -12,8 +12,6 @@ gcc -o runner runner.c util.c
 ./runner
 ```
 
-
-
 ## Demo
 
-
+![Alt Text](https://media.giphy.com/media/3GjIEPSdWB6B0WDl3U/giphy.gif)
