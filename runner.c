@@ -1,12 +1,8 @@
-#include <stdlib.h>
+#include "util.h"
+
 #include <time.h>
 #include <string.h> /* Only for strlen() */
 
-#include "util.h"
-
-
-#define MIN_WIN_ROW 30
-#define MIN_WIN_COL 70
 
 #ifdef _WIN32
     #define FRAME_DELAY 10
@@ -14,15 +10,18 @@
     #define FRAME_DELAY 14
 #endif
 
-#define JUMP_HEIGHT 10 // number of frames player needs to reach max jump height
-#define JUMP_AIRTIME 8 // number of frames player hovers for when JUMP_HEIGHT is reached
-#define JUMP_WIDTH 2 * JUMP_HEIGHT + JUMP_AIRTIME // total number of frames for player jump
+#define MIN_WIN_ROW 30
+#define MIN_WIN_COL 70
+
+#define JUMP_HEIGHT 10
+#define JUMP_AIRTIME 8  
+#define JUMP_WIDTH 2 * JUMP_HEIGHT + JUMP_AIRTIME
 
 #define OBSTACLE_LENGTH 6
 #define OBSTACLE_WIDTH 11
-#define OBSTACLE_CENTER_TO_EDGE 5 // number of columns half of obstacle takes up
+#define OBSTACLE_RADIUS 5
 
-#define GAME_LENGTH 4 // see declaration of obs_max_gen_gap
+#define GAME_LENGTH 4            // see declaration of obs_max_gen_gap
 #define GAME_MAX_DIFF_SCORE 4000 // see updating game difficulty in game loop
 
 
@@ -35,9 +34,6 @@ int random_int_between(int upper, int lower)
 
 int main (void)
 {
-    /*
-     * Get and check window dimensions.
-     */
     int win_row, win_col;
     get_terminal_window_dimensions(&win_row, &win_col);
     
@@ -49,24 +45,21 @@ int main (void)
     }
 
 
-    /*
-    * Buffer output for smoother drawing.
-    */
-    int BUFFER_SIZE = win_row * win_col;
-    char new_buffer[BUFFER_SIZE];
-    for (int i = 0; i < BUFFER_SIZE; i++)
-    {
-        new_buffer[i] = ' ';
-    }
-    setvbuf(stdout, new_buffer, _IOFBF, BUFFER_SIZE);
-    
-
     srand(time(NULL));
 
 
-    /*
-     * Character map of obstacle, used for drawing.
+    /* 
+     * Buffer output for smoother drawing.
      */
+    int OUTPUT_BUFFER_SIZE = win_row * win_col;
+    char new_buffer[OUTPUT_BUFFER_SIZE];
+    for (int i = 0; i < OUTPUT_BUFFER_SIZE; i++)
+    {
+        new_buffer[i] = ' ';
+    }
+    setvbuf(stdout, new_buffer, _IOFBF, OUTPUT_BUFFER_SIZE);
+
+
     const char obstacle_char_map[OBSTACLE_LENGTH][OBSTACLE_WIDTH] =
     {
         {' ', ' ', ' ', ' ', '|', '|', '|', ' ', ' ', ' ', ' '},
@@ -78,39 +71,32 @@ int main (void)
     };
 
 
-    /*
-     * Declare and initialise all game parameters.
-     */
-    // environment parameters
     int num_rows_for_sky = (int) ((win_row / 2) - (win_row / 9));
     int num_rows_for_ground = (int) (win_row / 6);
     int ground_row = win_row - num_rows_for_ground - 1;
     int difficulty = 0;
     int gameover = 0;
 
-    // player parameters
     int player_row = ground_row;
     int player_col = (int) (win_col / 5);
     int player_score = 0;
     int player_is_jumping = 0;
     int player_jump_timer = 0;
 
-    // obstacle parameters
     int obs_min_gen_gap = JUMP_WIDTH;
     int obs_max_gen_gap = GAME_LENGTH * obs_min_gen_gap;
     int obs_timer = random_int_between(obs_min_gen_gap, obs_max_gen_gap);
-    int obs_col = win_col + OBSTACLE_CENTER_TO_EDGE;
+    int obs_col = win_col + OBSTACLE_RADIUS;
 
     
-    /*
-     * Allocate and initiate game map, then insert player.
+    /* 
+     * Allocate and initiate game map.
      */
-    // allocate 2d char array to fill current window dimensions.
     char **map = malloc(win_row * sizeof(char *));
     if (!map)
     {
         fprintf(stderr, "Memory allocation error trying to allocate game map.\n");
-        exit(EXIT_FAILURE);
+        return 1;
     }
     for (int i = 0; i < win_row; i++)
     {
@@ -118,7 +104,7 @@ int main (void)
         if (!map[i])
         {
             fprintf(stderr, "Memory allocation error trying to allocate game map.\n");
-            exit(EXIT_FAILURE);
+            return 1;
         }
         for (int j = 0; j < win_col; j++)
         {
@@ -160,14 +146,8 @@ int main (void)
     #endif
 
 
-    /*
-     * Game loop.
-     */
     while (!gameover)
     {
-        /*
-         * Print map to screen.
-         */
         cursor_to(0, 0);
         for (int i = 0; i < win_row; i++)
         {
@@ -177,11 +157,10 @@ int main (void)
             }
         }
 
-
-        /*
+        /* 
          * Update map for next frame.
          */
-        // shift all chars to the left to animate motion
+        // shift everything to the left
         for (int i = 0; i < win_row - 1; i++)
         {
             for (int j = 0; j < win_col - 1; j++)
@@ -189,7 +168,7 @@ int main (void)
                 map[i][j] = map[i][j + 1];
             }
         }
-        // erase map middle to redraw player and/or obstacle
+        // erase map middle to redraw player/obstacle
         for (int i = num_rows_for_sky; i <= ground_row; i++)
         {
             for (int j = 0; j < win_col; j++)
@@ -216,11 +195,10 @@ int main (void)
         }
 
 
-        /*
-         * Update and display player score.
+        /* 
+         * Update and display player score. 
          */
         player_score += 2;
-
         char score_message[win_col];
         sprintf(score_message, " SCORE: %d", player_score);
         for (int i = 0; i < strlen(score_message); i++)
@@ -239,18 +217,18 @@ int main (void)
         }
 
 
-        /*
-         * Draw obstacle while it enters and exits frame.
+        /* 
+         * If obs_timer done, generate new obstacle or update and redraw existing.
+         * Else, update obs_timer.
          */
-        // obstacle is currently in frame
         if (obs_timer == 0)
         {
-            int num_visible_chars = 0; // number of columns obstacle still visible in
+            int num_visible_chars = 0;
 
-            // still entering
+            // draw entering
             if (obs_col >= win_col)
             {
-                num_visible_chars = win_col - (obs_col - OBSTACLE_CENTER_TO_EDGE);
+                num_visible_chars = win_col - (obs_col - OBSTACLE_RADIUS);
                 for (int i = 0; i < OBSTACLE_LENGTH; i++)
                 {
                     for (int j = 0; j < num_visible_chars; j++)
@@ -259,11 +237,10 @@ int main (void)
                     }
                 }
             }
-
-            // still exitting
-            else if (obs_col - OBSTACLE_CENTER_TO_EDGE < 0)
+            // draw exitting
+            else if (obs_col - OBSTACLE_RADIUS < 0)
             {
-                num_visible_chars = obs_col + OBSTACLE_CENTER_TO_EDGE;
+                num_visible_chars = obs_col + OBSTACLE_RADIUS;
                 for (int i = 0; i < OBSTACLE_LENGTH; i++)
                 {
                     for (int j = 0; j < num_visible_chars; j++)
@@ -272,41 +249,35 @@ int main (void)
                     }
                 }
             }
-
-            // midway
+            // draw midway
             else
             {
                 for (int i = 0; i < OBSTACLE_LENGTH; i++)
                 {
                     for (int j = 0; j < OBSTACLE_WIDTH; j++)
                     {
-                        map[ground_row - i][obs_col - OBSTACLE_CENTER_TO_EDGE + j] = obstacle_char_map[i][j];
+                        map[ground_row - i][obs_col - OBSTACLE_RADIUS + j] = obstacle_char_map[i][j];
                     }
                 }
             }
 
-            // If obstacle hasn't exitted, update its position
-            if (obs_col + OBSTACLE_CENTER_TO_EDGE > 0)
+            if (obs_col + OBSTACLE_RADIUS > 0)
             {
                 obs_col--;
             }
-            // Else, reset its parameters.
+            // obstacle no longer in frame
             else
             {
                 obs_timer = random_int_between(obs_min_gen_gap, obs_max_gen_gap - difficulty);
-                obs_col = win_col + OBSTACLE_CENTER_TO_EDGE;
+                obs_col = win_col + OBSTACLE_RADIUS;
             }
         }
-        // obstacle hasn't been generated yet, update timer
         else
         {
             obs_timer--;
         }
 
 
-        /*
-         * If player jumps, maintain player_row (y position) according to JUMP_HEIGHT and JUMP_AIRTIME.
-         */
         if (player_is_jumping)
         {
             // ascending
@@ -346,12 +317,13 @@ int main (void)
         {
             gameover = 1;
         }
-        // draw player piece by piece
         else
         {
+            map[player_row - 2][player_col] = '@';                       // head
+            map[player_row - 1][player_col] = 'O';                       // body
             map[player_row][player_col] = (rand() % 2 == 0) ? 'W' : 'M'; // legs
-            map[player_row - 1][player_col] = 'O'; // body?
-            if (player_is_jumping) // raise arms when jumping
+            // arms
+            if (player_is_jumping)
             {
                 map[player_row - 2][player_col - 1] = '\\';
                 map[player_row - 2][player_col + 1] = '/';
@@ -361,12 +333,8 @@ int main (void)
                 map[player_row - 1][player_col - 1] = '/';
                 map[player_row - 1][player_col + 1] = '\\';
             }
-            map[player_row - 2][player_col] = '@'; // head
         }
 
-        /*
-         * Sleep before next frame.
-         */
         if (!gameover)
         {
             fflush(stdout);
@@ -375,9 +343,6 @@ int main (void)
     }
 
 
-    /*
-     * Free map from memory.
-     */
     for (int i = 0; i < win_row; i++)
     {
         free(map[i]);
@@ -386,16 +351,13 @@ int main (void)
 
 
     /*
-     * If Unix terminal, reset previous config after ncurses.
+     * If ncurses-compatible terminal, reset its config after ncurses.
      */
     #ifndef _WIN32
         endwin();
     #endif
 
     
-    /*
-     * Clear screen.
-     */
     cursor_to(0, 0);
     for (int i = 0; i < win_row; i++)
     {
@@ -406,7 +368,7 @@ int main (void)
     }
     cursor_to(0, 0);
     
-    fprintf(stdout, "Game over :(\nFinal Score: %d\n", player_score);
 
+    fprintf(stdout, "Game over :(\nFinal Score: %d\n", player_score);
     return 0;
 }

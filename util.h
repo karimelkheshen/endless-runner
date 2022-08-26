@@ -6,19 +6,14 @@
 #include <stdlib.h>
 
 #ifdef _WIN32
-#include <windows.h>
-
+    #include <windows.h>
 #else
-#include <sys/ioctl.h>
-#include <ncurses.h>
-#include <unistd.h>
-#include <stdlib.h>
-
+    #include <sys/ioctl.h>
+    #include <ncurses.h>
+    #include <unistd.h>
 #endif
 
-/*
- * Cross platform (Windows + Unix) terminal utility functions.
- */
+
 void cursor_to(int, int);
 void sleep_for_millis(int);
 void get_terminal_window_dimensions(int *, int *);
