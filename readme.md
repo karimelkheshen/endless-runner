@@ -2,7 +2,7 @@
 # Endless Runner in the Terminal
 
 ## How to Run
-Enter the following commands in a terminal:
+Download the repo and enter the following commands in a terminal:
 ``` Bash
 cd endless_runner
 
